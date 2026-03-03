@@ -12,6 +12,14 @@ export interface Box {
   height: number
   content?: string
   zIndex: number
+  locked?: boolean
+}
+
+// Extended text box with rich content
+export interface TextBoxData extends Box {
+  type: 'text'
+  content: string
+  locked: boolean
 }
 
 // Viewport state
@@ -50,15 +58,32 @@ interface CanvasState {
   
   // Boxes
   boxes: Box[]
-  addBox: (box: Omit<Box, 'id' | 'zIndex'>) => void
+  addBox: (box: Omit<Box, 'id' | 'zIndex'>) => string
   updateBox: (id: string, updates: Partial<Box>) => void
   removeBox: (id: string) => void
   moveBox: (id: string, x: number, y: number) => void
   resizeBox: (id: string, width: number, height: number) => void
   
+  // Text box specific
+  addTextBox: (x: number, y: number, width?: number, height?: number, content?: string) => string
+  updateTextContent: (id: string, content: string) => void
+  toggleBoxLock: (id: string) => void
+  
+  // Z-order
+  bringToFront: (id: string) => void
+  sendToBack: (id: string) => void
+  
+  // Duplicate
+  duplicateBox: (id: string) => string | null
+  
   // Selection
   selectedBoxId: string | null
   selectBox: (id: string | null) => void
+  
+  // Editing
+  editingBoxId: string | null
+  startEditing: (id: string) => void
+  stopEditing: () => void
   
   // Space sync
   loadFromSpace: () => void
@@ -67,6 +92,7 @@ interface CanvasState {
   // Helpers
   snapToGrid: (value: number) => number
   getVisibleBoxes: (viewportWidth: number, viewportHeight: number, buffer?: number) => Box[]
+  getBoxById: (id: string) => Box | undefined
 }
 
 const MIN_ZOOM = 10
@@ -168,18 +194,22 @@ export const useCanvasStore = create<CanvasState>()(
       const x = state.grid.snapToGrid ? state.snapToGrid(box.x) : box.x
       const y = state.grid.snapToGrid ? state.snapToGrid(box.y) : box.y
       
+      const id = generateId()
       const newBox: Box = {
         ...box,
         x,
         y,
-        id: generateId(),
-        zIndex: maxZIndex + 1
+        id,
+        zIndex: maxZIndex + 1,
+        locked: box.locked ?? false,
       }
       
       set((state) => ({
         boxes: [...state.boxes, newBox],
         selectedBoxId: newBox.id
       }))
+      
+      return id
     },
     
     updateBox: (id, updates) => set((state) => ({
@@ -190,11 +220,15 @@ export const useCanvasStore = create<CanvasState>()(
     
     removeBox: (id) => set((state) => ({
       boxes: state.boxes.filter((box) => box.id !== id),
-      selectedBoxId: state.selectedBoxId === id ? null : state.selectedBoxId
+      selectedBoxId: state.selectedBoxId === id ? null : state.selectedBoxId,
+      editingBoxId: state.editingBoxId === id ? null : state.editingBoxId,
     })),
     
     moveBox: (id, x, y) => {
       const state = get()
+      const box = state.boxes.find(b => b.id === id)
+      if (box?.locked) return
+      
       const snappedX = state.grid.snapToGrid ? state.snapToGrid(x) : x
       const snappedY = state.grid.snapToGrid ? state.snapToGrid(y) : y
       
@@ -207,6 +241,9 @@ export const useCanvasStore = create<CanvasState>()(
     
     resizeBox: (id, width, height) => {
       const state = get()
+      const box = state.boxes.find(b => b.id === id)
+      if (box?.locked) return
+      
       const snappedWidth = state.grid.snapToGrid 
         ? Math.max(state.grid.size, state.snapToGrid(width))
         : Math.max(20, width)
@@ -221,9 +258,109 @@ export const useCanvasStore = create<CanvasState>()(
       }))
     },
     
+    // Text box specific methods
+    addTextBox: (x, y, width = 300, height = 200, content = '') => {
+      const state = get()
+      const snappedX = state.grid.snapToGrid ? state.snapToGrid(x) : x
+      const snappedY = state.grid.snapToGrid ? state.snapToGrid(y) : y
+      const maxZIndex = state.boxes.reduce((max, b) => Math.max(max, b.zIndex), 0)
+      
+      const id = generateId()
+      const newBox: TextBoxData = {
+        id,
+        type: 'text',
+        x: snappedX,
+        y: snappedY,
+        width,
+        height,
+        content,
+        zIndex: maxZIndex + 1,
+        locked: false,
+      }
+      
+      set((state) => ({
+        boxes: [...state.boxes, newBox],
+        selectedBoxId: id,
+        editingBoxId: id, // Start editing immediately
+      }))
+      
+      return id
+    },
+    
+    updateTextContent: (id, content) => set((state) => ({
+      boxes: state.boxes.map((box) =>
+        box.id === id ? { ...box, content } : box
+      )
+    })),
+    
+    toggleBoxLock: (id) => set((state) => ({
+      boxes: state.boxes.map((box) =>
+        box.id === id ? { ...box, locked: !box.locked } : box
+      )
+    })),
+    
+    // Z-order management
+    bringToFront: (id) => {
+      const state = get()
+      const maxZIndex = state.boxes.reduce((max, b) => Math.max(max, b.zIndex), 0)
+      set((state) => ({
+        boxes: state.boxes.map((box) =>
+          box.id === id ? { ...box, zIndex: maxZIndex + 1 } : box
+        )
+      }))
+    },
+    
+    sendToBack: (id) => {
+      const state = get()
+      const minZIndex = state.boxes.reduce((min, b) => Math.min(min, b.zIndex), Infinity)
+      set((state) => ({
+        boxes: state.boxes.map((box) =>
+          box.id === id ? { ...box, zIndex: Math.max(0, minZIndex - 1) } : box
+        )
+      }))
+    },
+    
+    // Duplicate box
+    duplicateBox: (id) => {
+      const state = get()
+      const box = state.boxes.find(b => b.id === id)
+      if (!box) return null
+      
+      const newId = generateId()
+      const maxZIndex = state.boxes.reduce((max, b) => Math.max(max, b.zIndex), 0)
+      const offset = state.grid.snapToGrid ? state.grid.size : 20
+      
+      const newBox: Box = {
+        ...box,
+        id: newId,
+        x: box.x + offset,
+        y: box.y + offset,
+        zIndex: maxZIndex + 1,
+        locked: false, // Duplicated box is unlocked
+      }
+      
+      set((state) => ({
+        boxes: [...state.boxes, newBox],
+        selectedBoxId: newId,
+      }))
+      
+      return newId
+    },
+    
     // Selection
     selectedBoxId: null,
     selectBox: (id) => set({ selectedBoxId: id }),
+    
+    // Editing
+    editingBoxId: null,
+    startEditing: (id) => {
+      const state = get()
+      const box = state.boxes.find(b => b.id === id)
+      if (box?.locked) return
+      
+      set({ editingBoxId: id, selectedBoxId: id })
+    },
+    stopEditing: () => set({ editingBoxId: null }),
     
     // Space sync - load state from active space
     loadFromSpace: () => {
@@ -233,6 +370,7 @@ export const useCanvasStore = create<CanvasState>()(
           viewport: { ...space.viewport },
           boxes: [...space.boxes],
           selectedBoxId: space.selectedBoxId,
+          editingBoxId: null,
         })
       }
     },
@@ -276,7 +414,12 @@ export const useCanvasStore = create<CanvasState>()(
           boxBottom > visibleTop
         )
       })
-    }
+    },
+    
+    getBoxById: (id) => {
+      const { boxes } = get()
+      return boxes.find(b => b.id === id)
+    },
   }))
 )
 

@@ -22,7 +22,7 @@ interface ToolButton {
 
 export function Toolbar() {
   const { sidebarCollapsed, toggleSidebar } = useLayoutStore()
-  const { addBox, viewport } = useCanvasStore()
+  const { addBox, addTextBox, viewport } = useCanvasStore()
 
   // Create a box at the center of the current viewport
   const createBox = (type: Box['type']) => {
@@ -30,6 +30,12 @@ export function Toolbar() {
     // Calculate center of viewport in canvas coordinates
     const centerX = (-viewport.x + 600) / scale // Assuming ~1200 viewport width
     const centerY = (-viewport.y + 400) / scale // Assuming ~800 viewport height
+    
+    // Use specialized addTextBox for text type
+    if (type === 'text') {
+      addTextBox(centerX - 150, centerY - 100)
+      return
+    }
     
     // Default sizes based on box type
     const sizes: Record<Box['type'], { width: number; height: number }> = {

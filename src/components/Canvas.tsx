@@ -1,15 +1,16 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { useCanvasStore } from '../stores/canvasStore'
-import type { Box } from '../stores/canvasStore'
+import type { Box, TextBoxData } from '../stores/canvasStore'
 import { useLayoutStore } from '../stores/layoutStore'
 import { Minimap } from './Minimap'
+import { TextBox } from './TextBox'
 
 interface Position {
   x: number
   y: number
 }
 
-// Individual box component for rendering
+// Individual box component for rendering non-text boxes
 function CanvasBox({ box, isSelected, onSelect, onDragStart }: {
   box: Box
   isSelected: boolean
@@ -77,6 +78,17 @@ export function Canvas() {
     selectedBoxId,
     selectBox,
     moveBox,
+    resizeBox,
+    removeBox,
+    addTextBox,
+    updateTextContent,
+    toggleBoxLock,
+    bringToFront,
+    sendToBack,
+    duplicateBox,
+    editingBoxId,
+    startEditing,
+    stopEditing,
   } = useCanvasStore()
   
   // Sync with layout store for backward compatibility
@@ -90,6 +102,10 @@ export function Canvas() {
   const [isDraggingBox, setIsDraggingBox] = useState(false)
   const [draggedBox, setDraggedBox] = useState<Box | null>(null)
   const [dragOffset, setDragOffset] = useState<Position>({ x: 0, y: 0 })
+  
+  // Double-click detection
+  const [lastClickTime, setLastClickTime] = useState(0)
+  const [lastClickPos, setLastClickPos] = useState<Position>({ x: 0, y: 0 })
   
   // Viewport dimensions
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
@@ -116,11 +132,22 @@ export function Canvas() {
   }, [viewport.zoom, setLayoutZoom])
 
   // Virtualized visible boxes
-  // Note: boxes and viewport.x/y/zoom trigger recalculation which is intentional
   const visibleBoxes = useMemo(() => {
     return getVisibleBoxes(viewportSize.width, viewportSize.height, 300)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getVisibleBoxes, viewportSize, boxes.length, viewport.x, viewport.y, viewport.zoom])
+
+  // Convert screen coordinates to canvas coordinates
+  const screenToCanvas = useCallback((screenX: number, screenY: number): Position => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return { x: 0, y: 0 }
+    
+    const scale = viewport.zoom / 100
+    return {
+      x: (screenX - rect.left - viewport.x) / scale,
+      y: (screenY - rect.top - viewport.y) / scale,
+    }
+  }, [viewport])
 
   // Handle mouse wheel for zoom and pan
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -147,8 +174,36 @@ export function Canvas() {
     setPanStart({ x: e.clientX - viewport.x, y: e.clientY - viewport.y })
   }, [viewport.x, viewport.y])
 
+  // Handle double-click on canvas to create text box
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    // Only handle double-click on empty canvas area
+    if (e.target !== contentRef.current && e.target !== canvasRef.current) {
+      return
+    }
+    
+    const canvasPos = screenToCanvas(e.clientX, e.clientY)
+    addTextBox(canvasPos.x - 150, canvasPos.y - 100) // Center the new box on click position
+  }, [screenToCanvas, addTextBox])
+
   // Handle mouse down
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    const now = Date.now()
+    const pos = { x: e.clientX, y: e.clientY }
+    
+    // Check for double-click (within 300ms and 10px)
+    if (
+      now - lastClickTime < 300 &&
+      Math.abs(pos.x - lastClickPos.x) < 10 &&
+      Math.abs(pos.y - lastClickPos.y) < 10
+    ) {
+      handleDoubleClick(e)
+      setLastClickTime(0) // Reset to prevent triple-click detection
+      return
+    }
+    
+    setLastClickTime(now)
+    setLastClickPos(pos)
+    
     // Middle mouse button always pans
     if (e.button === 1) {
       e.preventDefault()
@@ -161,10 +216,11 @@ export function Canvas() {
       // Check if clicking on empty canvas (not on a box)
       if (e.target === contentRef.current || e.target === canvasRef.current) {
         selectBox(null) // Deselect any selected box
+        stopEditing() // Stop editing if active
         startPan(e)
       }
     }
-  }, [startPan, selectBox])
+  }, [lastClickTime, lastClickPos, handleDoubleClick, startPan, selectBox, stopEditing])
 
   // Handle mouse move
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -191,6 +247,8 @@ export function Canvas() {
 
   // Start dragging a box
   const handleBoxDragStart = useCallback((e: React.MouseEvent, box: Box) => {
+    if (box.locked) return
+    
     const scale = viewport.zoom / 100
     setIsDraggingBox(true)
     setDraggedBox(box)
@@ -203,8 +261,14 @@ export function Canvas() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent if typing in an input
+      // Prevent if typing in an input (but allow if editing a text box)
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return
+      }
+      
+      // If editing a text box, only handle escape
+      if (editingBoxId && !(e.target as HTMLElement).contentEditable) {
+        // Let the text box handle its own shortcuts
         return
       }
 
@@ -214,35 +278,77 @@ export function Canvas() {
       if (isMod && e.key === '0') {
         e.preventDefault()
         resetViewport()
+        return
       }
       
       // Zoom in with Ctrl/Cmd + =
       if (isMod && (e.key === '=' || e.key === '+')) {
         e.preventDefault()
         zoomTo(viewport.zoom + 10)
+        return
       }
       
       // Zoom out with Ctrl/Cmd + -
       if (isMod && e.key === '-') {
         e.preventDefault()
         zoomTo(viewport.zoom - 10)
+        return
+      }
+      
+      // Create text box with T
+      if (e.key === 't' || e.key === 'T') {
+        if (!editingBoxId && !isMod) {
+          e.preventDefault()
+          const scale = viewport.zoom / 100
+          const centerX = (-viewport.x + viewportSize.width / 2) / scale
+          const centerY = (-viewport.y + viewportSize.height / 2) / scale
+          addTextBox(centerX - 150, centerY - 100)
+          return
+        }
+      }
+      
+      // Duplicate with Ctrl/Cmd + D
+      if (isMod && (e.key === 'd' || e.key === 'D') && selectedBoxId) {
+        e.preventDefault()
+        duplicateBox(selectedBoxId)
+        return
       }
       
       // Delete selected box with Delete/Backspace
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedBoxId) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedBoxId && !editingBoxId) {
         e.preventDefault()
-        useCanvasStore.getState().removeBox(selectedBoxId)
+        removeBox(selectedBoxId)
+        return
       }
       
-      // Escape to deselect
+      // Escape to deselect or stop editing
       if (e.key === 'Escape') {
-        selectBox(null)
+        if (editingBoxId) {
+          stopEditing()
+        } else {
+          selectBox(null)
+        }
+        return
+      }
+      
+      // Enter to start editing selected text box
+      if (e.key === 'Enter' && selectedBoxId && !editingBoxId) {
+        const box = boxes.find(b => b.id === selectedBoxId)
+        if (box?.type === 'text' && !box.locked) {
+          e.preventDefault()
+          startEditing(selectedBoxId)
+        }
+        return
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [viewport.zoom, zoomTo, resetViewport, selectedBoxId, selectBox])
+  }, [
+    viewport.zoom, zoomTo, resetViewport, selectedBoxId, selectBox, 
+    editingBoxId, stopEditing, startEditing, removeBox, addTextBox,
+    duplicateBox, boxes, viewportSize, viewport.x, viewport.y
+  ])
 
   // Calculate scaled grid size
   const scaledGridSize = grid.size * (viewport.zoom / 100)
@@ -252,6 +358,48 @@ export function Canvas() {
     if (isPanning) return 'grabbing'
     if (isDraggingBox) return 'move'
     return 'default'
+  }
+
+  // Render a box based on its type
+  const renderBox = (box: Box) => {
+    // Offset to account for canvas positioning
+    const displayBox = {
+      ...box,
+      x: box.x + 5000,
+      y: box.y + 5000,
+    }
+
+    if (box.type === 'text') {
+      return (
+        <TextBox
+          key={box.id}
+          box={displayBox as TextBoxData}
+          isSelected={selectedBoxId === box.id}
+          isEditing={editingBoxId === box.id}
+          onSelect={() => selectBox(box.id)}
+          onStartEdit={() => startEditing(box.id)}
+          onEndEdit={() => stopEditing()}
+          onDragStart={(e) => handleBoxDragStart(e, box)}
+          onContentChange={(content) => updateTextContent(box.id, content)}
+          onResize={(width, height) => resizeBox(box.id, width, height)}
+          onDelete={() => removeBox(box.id)}
+          onDuplicate={() => duplicateBox(box.id)}
+          onBringToFront={() => bringToFront(box.id)}
+          onSendToBack={() => sendToBack(box.id)}
+          onToggleLock={() => toggleBoxLock(box.id)}
+        />
+      )
+    }
+
+    return (
+      <CanvasBox
+        key={box.id}
+        box={displayBox}
+        isSelected={selectedBoxId === box.id}
+        onSelect={() => selectBox(box.id)}
+        onDragStart={(e) => handleBoxDragStart(e, box)}
+      />
+    )
   }
 
   return (
@@ -343,20 +491,7 @@ export function Canvas() {
 
         {/* Render only visible boxes (virtualization) */}
         {visibleBoxes.length > 0 ? (
-          visibleBoxes.map((box) => (
-            <CanvasBox
-              key={box.id}
-              box={{
-                ...box,
-                // Offset to account for canvas positioning
-                x: box.x + 5000,
-                y: box.y + 5000,
-              }}
-              isSelected={selectedBoxId === box.id}
-              onSelect={() => selectBox(box.id)}
-              onDragStart={(e) => handleBoxDragStart(e, box)}
-            />
-          ))
+          visibleBoxes.map(renderBox)
         ) : (
           /* Empty state indicator */
           <div 
@@ -364,7 +499,7 @@ export function Canvas() {
             style={{ left: '5000px', top: '5000px', transform: 'translate(-50%, -50%)' }}
           >
             <div className="text-neutral-600 text-sm">
-              <p className="mb-2">Click a tool in the toolbar to add content</p>
+              <p className="mb-2">Double-click or press T to create a text box</p>
               <p className="text-xs text-neutral-700">
                 Drag to pan • Ctrl+Scroll to zoom • Ctrl+0 to reset
               </p>
@@ -387,6 +522,14 @@ export function Canvas() {
           Snap: {grid.size}px
         </div>
       )}
+
+      {/* Keyboard shortcuts help */}
+      <div className="absolute bottom-4 left-4 text-xs text-neutral-600 space-y-0.5">
+        <div>T - New text box</div>
+        <div>⌘D - Duplicate</div>
+        <div>Del - Delete</div>
+        <div>Enter - Edit selected</div>
+      </div>
     </div>
   )
 }
