@@ -5,13 +5,13 @@ interface LayoutState {
   sidebarCollapsed: boolean
   toggleSidebar: () => void
   
-  // Canvas
+  // Canvas (legacy - kept for compatibility, real state in canvasStore)
   zoom: number
   setZoom: (zoom: number) => void
   gridVisible: boolean
   toggleGrid: () => void
   
-  // Boxes
+  // Boxes (legacy - kept for compatibility)
   boxCount: number
   setBoxCount: (count: number) => void
   
@@ -25,13 +25,13 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   sidebarCollapsed: false,
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   
-  // Canvas
+  // Canvas (legacy compatibility)
   zoom: 100,
-  setZoom: (zoom) => set({ zoom: Math.min(200, Math.max(25, zoom)) }),
+  setZoom: (zoom) => set({ zoom: Math.min(400, Math.max(10, zoom)) }),
   gridVisible: true,
   toggleGrid: () => set((state) => ({ gridVisible: !state.gridVisible })),
   
-  // Boxes
+  // Boxes (legacy)
   boxCount: 0,
   setBoxCount: (count) => set({ boxCount: count }),
   
