@@ -116,9 +116,11 @@ export function Canvas() {
   }, [viewport.zoom, setLayoutZoom])
 
   // Virtualized visible boxes
+  // Note: boxes and viewport.x/y/zoom trigger recalculation which is intentional
   const visibleBoxes = useMemo(() => {
     return getVisibleBoxes(viewportSize.width, viewportSize.height, 300)
-  }, [getVisibleBoxes, viewportSize, boxes, viewport])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getVisibleBoxes, viewportSize, boxes.length, viewport.x, viewport.y, viewport.zoom])
 
   // Handle mouse wheel for zoom and pan
   const handleWheel = useCallback((e: React.WheelEvent) => {
