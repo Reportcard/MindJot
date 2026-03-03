@@ -5,13 +5,16 @@ import {
   Plus, 
   Download,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  FolderDown,
+  FolderUp
 } from 'lucide-react'
 import { useLayoutStore } from '../stores/layoutStore'
 import { useSpaceStore } from '../stores/spaceStore'
 import type { Space } from '../stores/spaceStore'
 import { CreateSpaceDialog } from './CreateSpaceDialog'
 import { DeleteSpaceDialog } from './DeleteSpaceDialog'
+import { getStorageInfo } from '../lib/persistence'
 
 interface SpaceContextMenuProps {
   position: { x: number; y: number }
@@ -62,16 +65,42 @@ function SpaceContextMenu({ position, onClose, onDelete, onExport }: SpaceContex
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useLayoutStore()
-  const { spaces, activeSpaceId, switchSpace, exportSpace, ensureDefaultSpace } = useSpaceStore()
+  const { spaces, activeSpaceId, switchSpace, exportSpace, exportToFile, importFromFile, ensureDefaultSpace } = useSpaceStore()
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [deleteDialogSpace, setDeleteDialogSpace] = useState<Space | null>(null)
   const [contextMenu, setContextMenu] = useState<{ space: Space; position: { x: number; y: number } } | null>(null)
+  const [storageType, setStorageType] = useState<'file' | 'localStorage'>('localStorage')
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
 
-  // Ensure default space exists on mount
+  // Ensure default space exists on mount and check storage type
   useEffect(() => {
     ensureDefaultSpace()
+    getStorageInfo().then(info => setStorageType(info.type))
   }, [ensureDefaultSpace])
+
+  const handleExportAll = async () => {
+    setIsExporting(true)
+    try {
+      await exportToFile()
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleImportAll = async () => {
+    setIsImporting(true)
+    try {
+      const success = await importFromFile()
+      if (success) {
+        // Reload to the first imported space
+        ensureDefaultSpace()
+      }
+    } finally {
+      setIsImporting(false)
+    }
+  }
 
   const handleSpaceClick = (spaceId: string) => {
     switchSpace(spaceId)
@@ -239,10 +268,41 @@ export function Sidebar() {
           )}
         </nav>
 
-        {/* Footer - Space count */}
+        {/* Footer */}
         {!sidebarCollapsed && (
-          <div className="p-3 border-t border-neutral-700 text-xs text-neutral-500">
-            {spaces.length} {spaces.length === 1 ? 'space' : 'spaces'}
+          <div className="p-3 border-t border-neutral-700">
+            {/* Import/Export buttons */}
+            <div className="flex gap-2 mb-2">
+              <button
+                onClick={handleExportAll}
+                disabled={isExporting || spaces.length === 0}
+                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs
+                  bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-neutral-100 
+                  transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Export all spaces to file"
+              >
+                <FolderDown size={14} />
+                Export
+              </button>
+              <button
+                onClick={handleImportAll}
+                disabled={isImporting}
+                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs
+                  bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-neutral-100 
+                  transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Import spaces from file"
+              >
+                <FolderUp size={14} />
+                Import
+              </button>
+            </div>
+            {/* Space count and storage info */}
+            <div className="flex items-center justify-between text-xs text-neutral-500">
+              <span>{spaces.length} {spaces.length === 1 ? 'space' : 'spaces'}</span>
+              <span className="flex items-center gap-1" title={storageType === 'file' ? 'Saving to local files' : 'Saving to browser storage'}>
+                {storageType === 'file' ? '💾' : '🌐'} {storageType === 'file' ? 'File' : 'Browser'}
+              </span>
+            </div>
           </div>
         )}
       </aside>

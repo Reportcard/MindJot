@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Box, Viewport } from './canvasStore'
+import { syncToFile, initializeStorage } from '../lib/tauriStorage'
+import { exportData, importData, type PersistedData } from '../lib/persistence'
 
 // Space color presets
 export const SPACE_COLORS = [
@@ -50,9 +52,13 @@ interface SpaceState {
   // Canvas state for active space
   updateActiveSpaceCanvas: (viewport: Viewport, boxes: Box[], selectedBoxId: string | null) => void
   
-  // Export
+  // Export (legacy - returns JSON string)
   exportSpace: (id: string) => string | null
   exportAllSpaces: () => string
+  
+  // File-based export/import
+  exportToFile: () => Promise<boolean>
+  importFromFile: () => Promise<boolean>
   
   // Initialize with default space
   ensureDefaultSpace: () => void
@@ -185,7 +191,7 @@ export const useSpaceStore = create<SpaceState>()(
       exportAllSpaces: () => {
         const { spaces } = get()
         
-        const exportData = {
+        const data = {
           version: 1,
           exportedAt: new Date().toISOString(),
           type: 'all-spaces',
@@ -199,7 +205,51 @@ export const useSpaceStore = create<SpaceState>()(
           })),
         }
 
-        return JSON.stringify(exportData, null, 2)
+        return JSON.stringify(data, null, 2)
+      },
+
+      exportToFile: async () => {
+        const { spaces, activeSpaceId } = get()
+        const data: PersistedData = {
+          version: 1,
+          spaces: spaces,
+          activeSpaceId: activeSpaceId,
+        }
+        return await exportData(data)
+      },
+
+      importFromFile: async () => {
+        try {
+          const data = await importData()
+          if (data && Array.isArray(data.spaces)) {
+            // Merge or replace spaces
+            const importedSpaces = data.spaces.map((space: unknown) => {
+              const s = space as Partial<Space>
+              return {
+                id: s.id || generateId(),
+                name: s.name || 'Imported Space',
+                description: s.description,
+                color: s.color || SPACE_COLORS[0],
+                icon: s.icon || '📁',
+                createdAt: s.createdAt || Date.now(),
+                updatedAt: Date.now(),
+                viewport: s.viewport || { x: 0, y: 0, zoom: 100 },
+                boxes: s.boxes || [],
+                selectedBoxId: null,
+              } as Space
+            })
+
+            set({
+              spaces: importedSpaces,
+              activeSpaceId: importedSpaces.length > 0 ? importedSpaces[0].id : null,
+            })
+            return true
+          }
+          return false
+        } catch (error) {
+          console.error('[SpaceStore] Import failed:', error)
+          return false
+        }
       },
 
       ensureDefaultSpace: () => {
@@ -221,3 +271,16 @@ export const useSpaceStore = create<SpaceState>()(
     }
   )
 )
+
+// Subscribe to store changes and sync to file system
+let previousSpacesState: string | null = null
+useSpaceStore.subscribe((state) => {
+  const currentState = JSON.stringify({ spaces: state.spaces, activeSpaceId: state.activeSpaceId })
+  if (previousSpacesState && currentState !== previousSpacesState) {
+    syncToFile({ spaces: state.spaces, activeSpaceId: state.activeSpaceId })
+  }
+  previousSpacesState = currentState
+})
+
+// Initialize storage on app start
+initializeStorage().catch(console.error)
