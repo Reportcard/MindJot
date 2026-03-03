@@ -20,7 +20,12 @@ interface ToolButton {
   type: Box['type']
 }
 
-export function Toolbar() {
+interface ToolbarProps {
+  onOpenSettings?: () => void
+  onOpenSearch?: () => void
+}
+
+export function Toolbar({ onOpenSettings, onOpenSearch }: ToolbarProps) {
   const { sidebarCollapsed, toggleSidebar } = useLayoutStore()
   const { addBox, addTextBox, viewport } = useCanvasStore()
 
@@ -137,18 +142,20 @@ export function Toolbar() {
       {/* Right section - Search + Settings */}
       <div className="flex items-center gap-2">
         <button
+          onClick={onOpenSearch}
           className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-200 transition-colors"
-          title="Search (Ctrl+K)"
+          title="Search (Ctrl+F)"
         >
           <Search size={16} />
           <span className="text-sm hidden md:inline">Search</span>
           <kbd className="hidden lg:inline text-[10px] px-1 py-0.5 bg-neutral-700 rounded text-neutral-500">
-            ⌘K
+            ⌘F
           </kbd>
         </button>
         <button
+          onClick={onOpenSettings}
           className="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors"
-          title="Settings"
+          title="Settings (⌘,)"
         >
           <Settings size={18} />
         </button>

@@ -7,12 +7,17 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  Magnet
+  Magnet,
+  Keyboard
 } from 'lucide-react'
 import { useLayoutStore } from '../stores/layoutStore'
 import { useCanvasStore } from '../stores/canvasStore'
 
-export function StatusBar() {
+interface StatusBarProps {
+  onShowShortcuts?: () => void
+}
+
+export function StatusBar({ onShowShortcuts }: StatusBarProps) {
   const { aiStatus } = useLayoutStore()
   
   const { 
@@ -188,7 +193,7 @@ export function StatusBar() {
         </button>
       </div>
 
-      {/* Right section - Box count + AI status */}
+      {/* Right section - Box count + AI status + Shortcuts */}
       <div className="flex items-center gap-4">
         {/* Box count */}
         <div className="flex items-center gap-1.5 text-neutral-500" title="Number of boxes">
@@ -204,6 +209,16 @@ export function StatusBar() {
           {aiDisplay.icon}
           <span className="hidden sm:inline">{aiDisplay.text}</span>
         </div>
+
+        {/* Keyboard shortcuts button */}
+        <button
+          onClick={onShowShortcuts}
+          className="flex items-center gap-1.5 px-2 py-1 rounded text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800 transition-colors"
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard size={14} />
+          <span className="hidden sm:inline">?</span>
+        </button>
       </div>
     </footer>
   )

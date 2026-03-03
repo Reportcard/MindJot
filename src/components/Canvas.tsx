@@ -69,7 +69,6 @@ export function Canvas() {
   const {
     viewport,
     setViewport,
-    resetViewport,
     zoomTo,
     panBy,
     grid,
@@ -257,98 +256,6 @@ export function Canvas() {
       y: e.clientY - viewport.y - box.y * scale
     })
   }, [viewport])
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent if typing in an input (but allow if editing a text box)
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return
-      }
-      
-      // If editing a text box, only handle escape
-      if (editingBoxId && !(e.target as HTMLElement).contentEditable) {
-        // Let the text box handle its own shortcuts
-        return
-      }
-
-      const isMod = e.ctrlKey || e.metaKey
-
-      // Reset view with Ctrl/Cmd + 0
-      if (isMod && e.key === '0') {
-        e.preventDefault()
-        resetViewport()
-        return
-      }
-      
-      // Zoom in with Ctrl/Cmd + =
-      if (isMod && (e.key === '=' || e.key === '+')) {
-        e.preventDefault()
-        zoomTo(viewport.zoom + 10)
-        return
-      }
-      
-      // Zoom out with Ctrl/Cmd + -
-      if (isMod && e.key === '-') {
-        e.preventDefault()
-        zoomTo(viewport.zoom - 10)
-        return
-      }
-      
-      // Create text box with T
-      if (e.key === 't' || e.key === 'T') {
-        if (!editingBoxId && !isMod) {
-          e.preventDefault()
-          const scale = viewport.zoom / 100
-          const centerX = (-viewport.x + viewportSize.width / 2) / scale
-          const centerY = (-viewport.y + viewportSize.height / 2) / scale
-          addTextBox(centerX - 150, centerY - 100)
-          return
-        }
-      }
-      
-      // Duplicate with Ctrl/Cmd + D
-      if (isMod && (e.key === 'd' || e.key === 'D') && selectedBoxId) {
-        e.preventDefault()
-        duplicateBox(selectedBoxId)
-        return
-      }
-      
-      // Delete selected box with Delete/Backspace
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedBoxId && !editingBoxId) {
-        e.preventDefault()
-        removeBox(selectedBoxId)
-        return
-      }
-      
-      // Escape to deselect or stop editing
-      if (e.key === 'Escape') {
-        if (editingBoxId) {
-          stopEditing()
-        } else {
-          selectBox(null)
-        }
-        return
-      }
-      
-      // Enter to start editing selected text box
-      if (e.key === 'Enter' && selectedBoxId && !editingBoxId) {
-        const box = boxes.find(b => b.id === selectedBoxId)
-        if (box?.type === 'text' && !box.locked) {
-          e.preventDefault()
-          startEditing(selectedBoxId)
-        }
-        return
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [
-    viewport.zoom, zoomTo, resetViewport, selectedBoxId, selectBox, 
-    editingBoxId, stopEditing, startEditing, removeBox, addTextBox,
-    duplicateBox, boxes, viewportSize, viewport.x, viewport.y
-  ])
 
   // Calculate scaled grid size
   const scaledGridSize = grid.size * (viewport.zoom / 100)
