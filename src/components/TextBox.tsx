@@ -1,14 +1,19 @@
 import { useState, useRef, useEffect, useCallback, memo } from 'react'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Underline from '@tiptap/extension-underline'
+import Link from '@tiptap/extension-link'
 import {
   Bold,
   Italic,
-  Underline,
+  Underline as UnderlineIcon,
   Heading1,
   Heading2,
+  Heading3,
   List,
   ListOrdered,
   Code,
-  Link,
+  Link as LinkIcon,
   Lock,
   Unlock,
   Trash2,
@@ -79,28 +84,74 @@ export const TextBox = memo(function TextBox({
   onSendToBack,
   onToggleLock,
 }: TextBoxProps) {
-  const contentRef = useRef<HTMLDivElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 })
   const [resizing, setResizing] = useState<ResizeHandle | null>(null)
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 })
 
-  // Focus editor when entering edit mode
-  useEffect(() => {
-    if (isEditing && contentRef.current) {
-      contentRef.current.focus()
-      // Set cursor to end
-      const range = document.createRange()
-      const sel = window.getSelection()
-      range.selectNodeContents(contentRef.current)
-      range.collapse(false)
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-    }
-  }, [isEditing])
+  // TipTap editor instance
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: {
+          levels: [1, 2, 3],
+        },
+      }),
+      Underline,
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-blue-400 underline cursor-pointer',
+        },
+      }),
+    ],
+    content: box.content || '<p>Double-click to edit...</p>',
+    editable: isEditing,
+    onUpdate: ({ editor }) => {
+      onContentChange(editor.getHTML())
+    },
+    editorProps: {
+      attributes: {
+        class: 'w-full h-full p-3 overflow-auto text-neutral-200 text-sm focus:outline-none prose prose-invert prose-sm max-w-none',
+      },
+      handleKeyDown: (view, event) => {
+        // Prevent canvas shortcuts while editing
+        event.stopPropagation()
+        
+        // Escape to exit edit mode
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          onEndEdit()
+          return true
+        }
+        return false
+      },
+    },
+  })
 
-  // Handle click outside to deselect
+  // Update editor editability when isEditing changes
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(isEditing)
+      if (isEditing) {
+        // Focus the editor and move cursor to end
+        editor.commands.focus('end')
+      }
+    }
+  }, [isEditing, editor])
+
+  // Update editor content when box.content changes externally
+  useEffect(() => {
+    if (editor && !isEditing) {
+      const currentContent = editor.getHTML()
+      if (currentContent !== box.content && box.content) {
+        editor.commands.setContent(box.content)
+      }
+    }
+  }, [box.content, editor, isEditing])
+
+  // Handle click outside to deselect context menu
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (showContextMenu && boxRef.current && !boxRef.current.contains(e.target as Node)) {
@@ -110,12 +161,6 @@ export const TextBox = memo(function TextBox({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showContextMenu])
-
-  // Format text using execCommand
-  const formatText = useCallback((command: string, value?: string) => {
-    document.execCommand(command, false, value)
-    contentRef.current?.focus()
-  }, [])
 
   // Handle double-click to enter edit mode
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
@@ -133,16 +178,13 @@ export const TextBox = memo(function TextBox({
     setShowContextMenu(true)
   }, [])
 
-  // Handle content blur
-  const handleBlur = useCallback(() => {
-    if (contentRef.current) {
-      onContentChange(contentRef.current.innerHTML)
-    }
-    onEndEdit()
-  }, [onContentChange, onEndEdit])
-
   // Handle mouse down for dragging/selection
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Allow clicks on toolbar buttons
+    if ((e.target as HTMLElement).closest('.editor-toolbar')) {
+      return
+    }
+    
     e.stopPropagation()
     if (!isEditing) {
       onSelect()
@@ -250,51 +292,51 @@ export const TextBox = memo(function TextBox({
     }
   }, [resizing, resizeStart, onResize])
 
-  // Keyboard handling for editor
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (isEditing) {
-      // Prevent canvas shortcuts while editing
-      e.stopPropagation()
-      
-      // Format shortcuts
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        switch (e.key.toLowerCase()) {
-          case 'b':
-            e.preventDefault()
-            formatText('bold')
-            break
-          case 'i':
-            e.preventDefault()
-            formatText('italic')
-            break
-          case 'u':
-            e.preventDefault()
-            formatText('underline')
-            break
-        }
-      }
-
-      // Escape to exit edit mode
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        handleBlur()
-      }
-    }
-  }, [isEditing, formatText, handleBlur])
-
   // Insert link
   const insertLink = useCallback(() => {
-    const url = prompt('Enter URL:')
+    if (!editor) return
+    const url = prompt('Enter URL:', 'https://')
     if (url) {
-      formatText('createLink', url)
+      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
     }
-  }, [formatText])
+  }, [editor])
+
+  // Toolbar button component
+  const ToolbarButton = ({ 
+    onClick, 
+    isActive = false, 
+    title, 
+    children 
+  }: { 
+    onClick: () => void
+    isActive?: boolean
+    title: string
+    children: React.ReactNode 
+  }) => (
+    <button
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onClick()
+      }}
+      onMouseDown={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+      className={`p-1 hover:bg-neutral-700 rounded transition-colors ${
+        isActive ? 'bg-neutral-600 text-blue-400' : ''
+      }`}
+      title={title}
+    >
+      {children}
+    </button>
+  )
 
   return (
     <div
       ref={boxRef}
       className={`
-        absolute rounded-lg border-2 overflow-hidden
+        absolute rounded-lg border-2 overflow-visible
         transition-shadow duration-150
         ${box.locked ? 'border-orange-500/50 bg-orange-500/5' : 'border-blue-500 bg-blue-500/10'}
         ${isSelected ? 'ring-2 ring-white/50 shadow-lg' : 'hover:shadow-md'}
@@ -311,107 +353,116 @@ export const TextBox = memo(function TextBox({
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
-      onKeyDown={handleKeyDown}
     >
       {/* Lock indicator */}
       {box.locked && (
-        <div className="absolute top-1 right-1 p-1 bg-orange-500/20 rounded">
+        <div className="absolute top-1 right-1 p-1 bg-orange-500/20 rounded z-10">
           <Lock size={12} className="text-orange-400" />
         </div>
       )}
 
       {/* Rich text toolbar - visible when editing */}
-      {isEditing && (
-        <div className="absolute -top-10 left-0 flex items-center gap-1 px-2 py-1 bg-neutral-800 rounded-t-lg border border-neutral-700 z-20">
-          <button
-            onClick={() => formatText('bold')}
-            className="p-1 hover:bg-neutral-700 rounded"
+      {isEditing && editor && (
+        <div 
+          className="editor-toolbar absolute -top-10 left-0 flex items-center gap-1 px-2 py-1 bg-neutral-800 rounded-t-lg border border-neutral-700 z-20"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            isActive={editor.isActive('bold')}
             title="Bold (Ctrl+B)"
           >
             <Bold size={14} />
-          </button>
-          <button
-            onClick={() => formatText('italic')}
-            className="p-1 hover:bg-neutral-700 rounded"
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            isActive={editor.isActive('italic')}
             title="Italic (Ctrl+I)"
           >
             <Italic size={14} />
-          </button>
-          <button
-            onClick={() => formatText('underline')}
-            className="p-1 hover:bg-neutral-700 rounded"
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            isActive={editor.isActive('underline')}
             title="Underline (Ctrl+U)"
           >
-            <Underline size={14} />
-          </button>
+            <UnderlineIcon size={14} />
+          </ToolbarButton>
           <div className="w-px h-4 bg-neutral-600 mx-1" />
-          <button
-            onClick={() => formatText('formatBlock', 'h1')}
-            className="p-1 hover:bg-neutral-700 rounded"
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+            isActive={editor.isActive('heading', { level: 1 })}
             title="Heading 1"
           >
             <Heading1 size={14} />
-          </button>
-          <button
-            onClick={() => formatText('formatBlock', 'h2')}
-            className="p-1 hover:bg-neutral-700 rounded"
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+            isActive={editor.isActive('heading', { level: 2 })}
             title="Heading 2"
           >
             <Heading2 size={14} />
-          </button>
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+            isActive={editor.isActive('heading', { level: 3 })}
+            title="Heading 3"
+          >
+            <Heading3 size={14} />
+          </ToolbarButton>
           <div className="w-px h-4 bg-neutral-600 mx-1" />
-          <button
-            onClick={() => formatText('insertUnorderedList')}
-            className="p-1 hover:bg-neutral-700 rounded"
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            isActive={editor.isActive('bulletList')}
             title="Bullet List"
           >
             <List size={14} />
-          </button>
-          <button
-            onClick={() => formatText('insertOrderedList')}
-            className="p-1 hover:bg-neutral-700 rounded"
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            isActive={editor.isActive('orderedList')}
             title="Numbered List"
           >
             <ListOrdered size={14} />
-          </button>
+          </ToolbarButton>
           <div className="w-px h-4 bg-neutral-600 mx-1" />
-          <button
-            onClick={() => formatText('formatBlock', 'pre')}
-            className="p-1 hover:bg-neutral-700 rounded"
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+            isActive={editor.isActive('codeBlock')}
             title="Code Block"
           >
             <Code size={14} />
-          </button>
-          <button
+          </ToolbarButton>
+          <ToolbarButton
             onClick={insertLink}
-            className="p-1 hover:bg-neutral-700 rounded"
+            isActive={editor.isActive('link')}
             title="Insert Link"
           >
-            <Link size={14} />
-          </button>
+            <LinkIcon size={14} />
+          </ToolbarButton>
         </div>
       )}
 
-      {/* Content area */}
-      <div
-        ref={contentRef}
+      {/* Content area with TipTap editor */}
+      <div 
         className={`
-          w-full h-full p-3 overflow-auto
-          text-neutral-200 text-sm
-          focus:outline-none
+          w-full h-full overflow-auto
+          [&_.ProseMirror]:w-full [&_.ProseMirror]:h-full [&_.ProseMirror]:p-3
+          [&_.ProseMirror]:outline-none
+          [&_.ProseMirror_h1]:text-xl [&_.ProseMirror_h1]:font-bold [&_.ProseMirror_h1]:mb-2
+          [&_.ProseMirror_h2]:text-lg [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:mb-2
+          [&_.ProseMirror_h3]:text-base [&_.ProseMirror_h3]:font-semibold [&_.ProseMirror_h3]:mb-2
+          [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ul]:mb-2
+          [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_ol]:mb-2
+          [&_.ProseMirror_pre]:bg-neutral-800 [&_.ProseMirror_pre]:p-2 [&_.ProseMirror_pre]:rounded [&_.ProseMirror_pre]:font-mono [&_.ProseMirror_pre]:text-xs [&_.ProseMirror_pre]:my-2
+          [&_.ProseMirror_code]:bg-neutral-800 [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:font-mono [&_.ProseMirror_code]:text-xs
+          [&_.ProseMirror_a]:text-blue-400 [&_.ProseMirror_a]:underline
+          [&_.ProseMirror_p]:mb-1
           ${isEditing ? '' : 'pointer-events-none'}
-          [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2
-          [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mb-2
-          [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2
-          [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2
-          [&_pre]:bg-neutral-800 [&_pre]:p-2 [&_pre]:rounded [&_pre]:font-mono [&_pre]:text-xs
-          [&_a]:text-blue-400 [&_a]:underline
         `}
-        contentEditable={isEditing}
-        suppressContentEditableWarning
-        dangerouslySetInnerHTML={{ __html: box.content || 'Double-click to edit...' }}
-        onBlur={handleBlur}
-      />
+      >
+        <EditorContent editor={editor} />
+      </div>
 
       {/* Resize handles - visible when selected but not editing */}
       {isSelected && !isEditing && !box.locked && (

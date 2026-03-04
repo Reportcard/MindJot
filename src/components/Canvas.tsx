@@ -169,8 +169,15 @@ export function Canvas() {
 
   // Start panning
   const startPan = useCallback((e: React.MouseEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    
     setIsPanning(true)
-    setPanStart({ x: e.clientX - viewport.x, y: e.clientY - viewport.y })
+    // Account for canvas position on page
+    setPanStart({ 
+      x: e.clientX - rect.left - viewport.x, 
+      y: e.clientY - rect.top - viewport.y 
+    })
   }, [viewport.x, viewport.y])
 
   // Handle double-click on canvas to create text box
@@ -221,8 +228,8 @@ export function Canvas() {
     }
   }, [lastClickTime, lastClickPos, handleDoubleClick, startPan, selectBox, stopEditing])
 
-  // Handle mouse move
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+  // Handle mouse move (document-level for robust dragging)
+  const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isPanning) {
       setViewport({
         x: e.clientX - panStart.x,
@@ -237,23 +244,39 @@ export function Canvas() {
     }
   }, [isPanning, panStart, setViewport, isDraggingBox, draggedBox, dragOffset, viewport, moveBox])
 
-  // Handle mouse up
+  // Handle mouse up (document-level for robust dragging)
   const handleMouseUp = useCallback(() => {
     setIsPanning(false)
     setIsDraggingBox(false)
     setDraggedBox(null)
   }, [])
 
+  // Add document-level event listeners when dragging/panning starts
+  useEffect(() => {
+    if (isPanning || isDraggingBox) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+      }
+    }
+  }, [isPanning, isDraggingBox, handleMouseMove, handleMouseUp])
+
   // Start dragging a box
   const handleBoxDragStart = useCallback((e: React.MouseEvent, box: Box) => {
     if (box.locked) return
     
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    
     const scale = viewport.zoom / 100
     setIsDraggingBox(true)
     setDraggedBox(box)
+    // Account for canvas position on page
     setDragOffset({
-      x: e.clientX - viewport.x - box.x * scale,
-      y: e.clientY - viewport.y - box.y * scale
+      x: e.clientX - rect.left - viewport.x - box.x * scale,
+      y: e.clientY - rect.top - viewport.y - box.y * scale
     })
   }, [viewport])
 
