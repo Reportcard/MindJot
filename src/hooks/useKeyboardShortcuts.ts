@@ -73,6 +73,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
     addTextBox,
     addImageBox,
     addWebClipBox,
+    addAiBox,
     addBox,
     boxes,
     toggleGrid,
@@ -112,6 +113,8 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
       addImageBox(center.x - size.width / 2, center.y - size.height / 2, '', size.width, size.height)
     } else if (type === 'web') {
       addWebClipBox(center.x - size.width / 2, center.y - size.height / 2)
+    } else if (type === 'ai') {
+      addAiBox(center.x - size.width / 2, center.y - size.height / 2, size.width, size.height)
     } else {
       addBox({
         type,
@@ -122,7 +125,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
         content: `New ${type} box`,
       })
     }
-  }, [getViewportCenter, addTextBox, addImageBox, addWebClipBox, addBox])
+  }, [getViewportCenter, addTextBox, addImageBox, addWebClipBox, addAiBox, addBox])
 
   // Clipboard state for copy/paste
   const clipboardRef = { current: null as string | null }

@@ -40,6 +40,27 @@ export interface WebClipBoxData extends Box {
   siteName?: string
 }
 
+// Extended YouTube box with video URL
+export interface YouTubeBoxData extends Box {
+  type: 'youtube'
+  videoUrl: string
+  videoId?: string
+}
+
+// Extended AI box with chat messages
+export interface AIBoxData extends Box {
+  type: 'ai'
+  messages: AIMessage[]
+}
+
+// AI message structure
+export interface AIMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: number
+}
+
 // Viewport state
 export interface Viewport {
   x: number // Pan offset X
@@ -94,6 +115,14 @@ interface CanvasState {
   // Web clip box specific
   addWebClipBox: (x: number, y: number, url?: string, width?: number, height?: number) => string
   updateWebClipContent: (id: string, url: string, metadata?: { title?: string; description?: string; favicon?: string; thumbnail?: string; siteName?: string }) => void
+  
+  // YouTube box specific
+  addYouTubeBox: (x: number, y: number, videoUrl?: string, width?: number, height?: number) => string
+  updateYouTubeContent: (id: string, videoUrl: string) => void
+  
+  // AI box specific
+  addAiBox: (x: number, y: number, width?: number, height?: number) => string
+  updateAiBoxMessages: (id: string, messages: AIMessage[]) => void
   
   // Z-order
   bringToFront: (id: string) => void
@@ -402,6 +431,78 @@ export const useCanvasStore = create<CanvasState>()(
               thumbnail: metadata?.thumbnail ?? (box as WebClipBoxData).thumbnail,
               siteName: metadata?.siteName ?? (box as WebClipBoxData).siteName,
             } 
+          : box
+      )
+    })),
+    
+    // YouTube box specific methods
+    addYouTubeBox: (x, y, videoUrl = '', width = 560, height = 315) => {
+      const state = get()
+      const snappedX = state.grid.snapToGrid ? state.snapToGrid(x) : x
+      const snappedY = state.grid.snapToGrid ? state.snapToGrid(y) : y
+      const maxZIndex = state.boxes.reduce((max, b) => Math.max(max, b.zIndex), 0)
+      
+      const id = generateId()
+      const newBox: YouTubeBoxData = {
+        id,
+        type: 'youtube',
+        x: snappedX,
+        y: snappedY,
+        width,
+        height,
+        videoUrl,
+        zIndex: maxZIndex + 1,
+        locked: false,
+      }
+      
+      set((state) => ({
+        boxes: [...state.boxes, newBox],
+        selectedBoxId: id,
+      }))
+      
+      return id
+    },
+    
+    updateYouTubeContent: (id, videoUrl) => set((state) => ({
+      boxes: state.boxes.map((box) =>
+        box.id === id && box.type === 'youtube' 
+          ? { ...box, videoUrl } 
+          : box
+      )
+    })),
+    
+    // AI box specific methods
+    addAiBox: (x, y, width = 400, height = 300) => {
+      const state = get()
+      const snappedX = state.grid.snapToGrid ? state.snapToGrid(x) : x
+      const snappedY = state.grid.snapToGrid ? state.snapToGrid(y) : y
+      const maxZIndex = state.boxes.reduce((max, b) => Math.max(max, b.zIndex), 0)
+      
+      const id = generateId()
+      const newBox: AIBoxData = {
+        id,
+        type: 'ai',
+        x: snappedX,
+        y: snappedY,
+        width,
+        height,
+        messages: [],
+        zIndex: maxZIndex + 1,
+        locked: false,
+      }
+      
+      set((state) => ({
+        boxes: [...state.boxes, newBox],
+        selectedBoxId: id,
+      }))
+      
+      return id
+    },
+    
+    updateAiBoxMessages: (id, messages) => set((state) => ({
+      boxes: state.boxes.map((box) =>
+        box.id === id && box.type === 'ai' 
+          ? { ...box, messages } 
           : box
       )
     })),

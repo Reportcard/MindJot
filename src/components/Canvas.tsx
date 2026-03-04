@@ -1,12 +1,13 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Type, Image, Globe } from 'lucide-react'
 import { useCanvasStore } from '../stores/canvasStore'
-import type { Box, TextBoxData, ImageBoxData, WebClipBoxData } from '../stores/canvasStore'
+import type { Box, TextBoxData, ImageBoxData, WebClipBoxData, AIBoxData, AIMessage } from '../stores/canvasStore'
 import { useLayoutStore } from '../stores/layoutStore'
 import { Minimap } from './Minimap'
 import { TextBox } from './TextBox'
 import { ImageBox } from './ImageBox'
 import { WebClipBox } from './WebClipBox'
+import { AIBox } from './AIBox'
 
 interface Position {
   x: number
@@ -85,9 +86,11 @@ export function Canvas() {
     addTextBox,
     addImageBox,
     addWebClipBox,
+    addAiBox,
     updateTextContent,
     updateImageContent,
     updateWebClipContent,
+    updateAiBoxMessages,
     toggleBoxLock,
     bringToFront,
     sendToBack,
@@ -388,6 +391,25 @@ export function Canvas() {
           onSendToBack={() => sendToBack(box.id)}
           onToggleLock={() => toggleBoxLock(box.id)}
           onUrlChange={(url, metadata) => updateWebClipContent(box.id, url, metadata)}
+        />
+      )
+    }
+
+    if (box.type === 'ai') {
+      return (
+        <AIBox
+          key={box.id}
+          box={displayBox as AIBoxData}
+          isSelected={selectedBoxId === box.id}
+          onSelect={() => selectBox(box.id)}
+          onDragStart={(e) => handleBoxDragStart(e, box)}
+          onResize={(width, height) => resizeBox(box.id, width, height)}
+          onDelete={() => removeBox(box.id)}
+          onDuplicate={() => duplicateBox(box.id)}
+          onBringToFront={() => bringToFront(box.id)}
+          onSendToBack={() => sendToBack(box.id)}
+          onToggleLock={() => toggleBoxLock(box.id)}
+          onMessagesChange={(messages: AIMessage[]) => updateAiBoxMessages(box.id, messages)}
         />
       )
     }
