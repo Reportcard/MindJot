@@ -1,9 +1,11 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
+import { Type, Image } from 'lucide-react'
 import { useCanvasStore } from '../stores/canvasStore'
-import type { Box, TextBoxData } from '../stores/canvasStore'
+import type { Box, TextBoxData, ImageBoxData } from '../stores/canvasStore'
 import { useLayoutStore } from '../stores/layoutStore'
 import { Minimap } from './Minimap'
 import { TextBox } from './TextBox'
+import { ImageBox } from './ImageBox'
 
 interface Position {
   x: number
@@ -80,7 +82,9 @@ export function Canvas() {
     resizeBox,
     removeBox,
     addTextBox,
+    addImageBox,
     updateTextContent,
+    updateImageContent,
     toggleBoxLock,
     bringToFront,
     sendToBack,
@@ -108,6 +112,9 @@ export function Canvas() {
   
   // Viewport dimensions
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
+  
+  // Canvas drag & drop state
+  const [isDraggingOver, setIsDraggingOver] = useState(false)
   
   // Track viewport size
   useEffect(() => {
@@ -180,16 +187,37 @@ export function Canvas() {
     })
   }, [viewport.x, viewport.y])
 
-  // Handle double-click on canvas to create text box
+  // Context menu state for double-click
+  const [showBoxMenu, setShowBoxMenu] = useState(false)
+  const [boxMenuPos, setBoxMenuPos] = useState<Position>({ x: 0, y: 0 })
+
+  // Handle double-click on canvas to create box with menu
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     // Only handle double-click on empty canvas area
     if (e.target !== contentRef.current && e.target !== canvasRef.current) {
       return
     }
     
-    const canvasPos = screenToCanvas(e.clientX, e.clientY)
-    addTextBox(canvasPos.x - 150, canvasPos.y - 100) // Center the new box on click position
-  }, [screenToCanvas, addTextBox])
+    // Show box type selection menu
+    setBoxMenuPos({ x: e.clientX, y: e.clientY })
+    setShowBoxMenu(true)
+  }, [])
+
+  // Handle box menu selection
+  const handleBoxMenuSelect = useCallback((type: 'text' | 'image') => {
+    const canvasPos = screenToCanvas(boxMenuPos.x, boxMenuPos.y)
+    if (type === 'text') {
+      addTextBox(canvasPos.x - 150, canvasPos.y - 100)
+    } else if (type === 'image') {
+      addImageBox(canvasPos.x - 200, canvasPos.y - 150)
+    }
+    setShowBoxMenu(false)
+  }, [boxMenuPos, screenToCanvas, addTextBox, addImageBox])
+
+  // Close box menu
+  const closeBoxMenu = useCallback(() => {
+    setShowBoxMenu(false)
+  }, [])
 
   // Handle mouse down
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -321,6 +349,25 @@ export function Canvas() {
       )
     }
 
+    if (box.type === 'image') {
+      return (
+        <ImageBox
+          key={box.id}
+          box={displayBox as ImageBoxData}
+          isSelected={selectedBoxId === box.id}
+          onSelect={() => selectBox(box.id)}
+          onDragStart={(e) => handleBoxDragStart(e, box)}
+          onResize={(width, height) => resizeBox(box.id, width, height)}
+          onDelete={() => removeBox(box.id)}
+          onDuplicate={() => duplicateBox(box.id)}
+          onBringToFront={() => bringToFront(box.id)}
+          onSendToBack={() => sendToBack(box.id)}
+          onToggleLock={() => toggleBoxLock(box.id)}
+          onImageUrlChange={(imageUrl, altText) => updateImageContent(box.id, imageUrl, altText)}
+        />
+      )
+    }
+
     return (
       <CanvasBox
         key={box.id}
@@ -335,7 +382,7 @@ export function Canvas() {
   return (
     <div
       ref={canvasRef}
-      className="flex-1 relative overflow-hidden select-none"
+      className={`flex-1 relative overflow-hidden select-none ${isDraggingOver ? 'ring-2 ring-blue-500 ring-inset' : ''}`}
       style={{
         backgroundColor: '#1a1a1a',
         cursor: getCursor(),
@@ -345,6 +392,32 @@ export function Canvas() {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onDragOver={(e) => {
+        e.preventDefault()
+        if (e.dataTransfer.types.includes('Files')) {
+          setIsDraggingOver(true)
+        }
+      }}
+      onDragLeave={() => setIsDraggingOver(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setIsDraggingOver(false)
+        
+        const files = e.dataTransfer.files
+        if (files.length > 0) {
+          const file = files[0]
+          const supportedFormats = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml']
+          if (supportedFormats.includes(file.type)) {
+            const reader = new FileReader()
+            reader.onload = (event) => {
+              const result = event.target?.result as string
+              const canvasPos = screenToCanvas(e.clientX, e.clientY)
+              addImageBox(canvasPos.x - 200, canvasPos.y - 150, result, 400, 300, file.name.replace(/\.[^/.]+$/, ''))
+            }
+            reader.readAsDataURL(file)
+          }
+        }
+      }}
     >
       {/* Grid Pattern */}
       {(gridVisible || grid.visible) && (
@@ -429,14 +502,47 @@ export function Canvas() {
             style={{ left: '5000px', top: '5000px', transform: 'translate(-50%, -50%)' }}
           >
             <div className="text-neutral-600 text-sm">
-              <p className="mb-2">Double-click or press T to create a text box</p>
+              <p className="mb-2">Double-click to create a box (Text or Image)</p>
               <p className="text-xs text-neutral-700">
-                Drag to pan • Ctrl+Scroll to zoom • Ctrl+0 to reset
+                T - Text • I - Image • Drag to pan • Ctrl+Scroll to zoom
               </p>
             </div>
           </div>
         )}
       </div>
+
+      {/* Box type selection menu (on double-click) */}
+      {showBoxMenu && (
+        <div
+          className="fixed z-50 min-w-36 py-1 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl"
+          style={{ top: boxMenuPos.y, left: boxMenuPos.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => handleBoxMenuSelect('text')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-700 text-sm text-neutral-200"
+          >
+            <Type size={14} className="text-blue-400" />
+            Text
+          </button>
+          <button
+            onClick={() => handleBoxMenuSelect('image')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-700 text-sm text-neutral-200"
+          >
+            <Image size={14} className="text-green-400" />
+            Image
+          </button>
+        </div>
+      )}
+
+      {/* Click outside to close box menu */}
+      {showBoxMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={closeBoxMenu}
+          onContextMenu={(e) => { e.preventDefault(); closeBoxMenu() }}
+        />
+      )}
 
       {/* Minimap */}
       <Minimap />
@@ -456,9 +562,11 @@ export function Canvas() {
       {/* Keyboard shortcuts help */}
       <div className="absolute bottom-4 left-4 text-xs text-neutral-600 space-y-0.5">
         <div>T - New text box</div>
+        <div>I - New image box</div>
         <div>⌘D - Duplicate</div>
         <div>Del - Delete</div>
         <div>Enter - Edit selected</div>
+        <div>Drop image - Add image</div>
       </div>
     </div>
   )

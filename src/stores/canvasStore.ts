@@ -22,6 +22,13 @@ export interface TextBoxData extends Box {
   locked: boolean
 }
 
+// Extended image box with image-specific data
+export interface ImageBoxData extends Box {
+  type: 'image'
+  imageUrl: string
+  altText: string
+}
+
 // Viewport state
 export interface Viewport {
   x: number // Pan offset X
@@ -68,6 +75,10 @@ interface CanvasState {
   addTextBox: (x: number, y: number, width?: number, height?: number, content?: string) => string
   updateTextContent: (id: string, content: string) => void
   toggleBoxLock: (id: string) => void
+  
+  // Image box specific
+  addImageBox: (x: number, y: number, imageUrl: string, width?: number, height?: number, altText?: string) => string
+  updateImageContent: (id: string, imageUrl: string, altText?: string) => void
   
   // Z-order
   bringToFront: (id: string) => void
@@ -296,6 +307,43 @@ export const useCanvasStore = create<CanvasState>()(
     toggleBoxLock: (id) => set((state) => ({
       boxes: state.boxes.map((box) =>
         box.id === id ? { ...box, locked: !box.locked } : box
+      )
+    })),
+    
+    // Image box specific methods
+    addImageBox: (x, y, imageUrl, width = 400, height = 300, altText = '') => {
+      const state = get()
+      const snappedX = state.grid.snapToGrid ? state.snapToGrid(x) : x
+      const snappedY = state.grid.snapToGrid ? state.snapToGrid(y) : y
+      const maxZIndex = state.boxes.reduce((max, b) => Math.max(max, b.zIndex), 0)
+      
+      const id = generateId()
+      const newBox: ImageBoxData = {
+        id,
+        type: 'image',
+        x: snappedX,
+        y: snappedY,
+        width,
+        height,
+        imageUrl,
+        altText,
+        zIndex: maxZIndex + 1,
+        locked: false,
+      }
+      
+      set((state) => ({
+        boxes: [...state.boxes, newBox],
+        selectedBoxId: id,
+      }))
+      
+      return id
+    },
+    
+    updateImageContent: (id, imageUrl, altText) => set((state) => ({
+      boxes: state.boxes.map((box) =>
+        box.id === id && box.type === 'image' 
+          ? { ...box, imageUrl, altText: altText !== undefined ? altText : box.altText } 
+          : box
       )
     })),
     
