@@ -27,7 +27,7 @@ interface ToolbarProps {
 
 export function Toolbar({ onOpenSettings, onOpenSearch }: ToolbarProps) {
   const { sidebarCollapsed, toggleSidebar } = useLayoutStore()
-  const { addBox, addTextBox, viewport } = useCanvasStore()
+  const { addBox, addTextBox, addImageBox, addWebClipBox, viewport } = useCanvasStore()
 
   // Create a box at the center of the current viewport
   const createBox = (type: Box['type']) => {
@@ -36,17 +36,27 @@ export function Toolbar({ onOpenSettings, onOpenSearch }: ToolbarProps) {
     const centerX = (-viewport.x + 600) / scale // Assuming ~1200 viewport width
     const centerY = (-viewport.y + 400) / scale // Assuming ~800 viewport height
     
-    // Use specialized addTextBox for text type
+    // Use specialized methods for each type
     if (type === 'text') {
       addTextBox(centerX - 150, centerY - 100)
       return
     }
     
-    // Default sizes based on box type
+    if (type === 'image') {
+      addImageBox(centerX - 200, centerY - 150, '', 400, 300)
+      return
+    }
+    
+    if (type === 'web') {
+      addWebClipBox(centerX - 160, centerY - 100)
+      return
+    }
+    
+    // Default sizes based on box type (for ai, youtube, etc.)
     const sizes: Record<Box['type'], { width: number; height: number }> = {
       text: { width: 300, height: 200 },
       image: { width: 400, height: 300 },
-      web: { width: 600, height: 400 },
+      web: { width: 320, height: 200 },
       ai: { width: 400, height: 300 },
       youtube: { width: 560, height: 315 },
     }

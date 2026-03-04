@@ -71,6 +71,8 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
     removeBox,
     duplicateBox,
     addTextBox,
+    addImageBox,
+    addWebClipBox,
     addBox,
     boxes,
     toggleGrid,
@@ -97,7 +99,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
     const sizes: Record<string, { width: number; height: number }> = {
       text: { width: 300, height: 200 },
       image: { width: 400, height: 300 },
-      web: { width: 600, height: 400 },
+      web: { width: 320, height: 200 },
       ai: { width: 400, height: 300 },
       youtube: { width: 560, height: 315 },
     }
@@ -106,6 +108,10 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
     
     if (type === 'text') {
       addTextBox(center.x - size.width / 2, center.y - size.height / 2)
+    } else if (type === 'image') {
+      addImageBox(center.x - size.width / 2, center.y - size.height / 2, '', size.width, size.height)
+    } else if (type === 'web') {
+      addWebClipBox(center.x - size.width / 2, center.y - size.height / 2)
     } else {
       addBox({
         type,
@@ -116,7 +122,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
         content: `New ${type} box`,
       })
     }
-  }, [getViewportCenter, addTextBox, addBox])
+  }, [getViewportCenter, addTextBox, addImageBox, addWebClipBox, addBox])
 
   // Clipboard state for copy/paste
   const clipboardRef = { current: null as string | null }

@@ -1,11 +1,12 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
-import { Type, Image } from 'lucide-react'
+import { Type, Image, Globe } from 'lucide-react'
 import { useCanvasStore } from '../stores/canvasStore'
-import type { Box, TextBoxData, ImageBoxData } from '../stores/canvasStore'
+import type { Box, TextBoxData, ImageBoxData, WebClipBoxData } from '../stores/canvasStore'
 import { useLayoutStore } from '../stores/layoutStore'
 import { Minimap } from './Minimap'
 import { TextBox } from './TextBox'
 import { ImageBox } from './ImageBox'
+import { WebClipBox } from './WebClipBox'
 
 interface Position {
   x: number
@@ -83,8 +84,10 @@ export function Canvas() {
     removeBox,
     addTextBox,
     addImageBox,
+    addWebClipBox,
     updateTextContent,
     updateImageContent,
+    updateWebClipContent,
     toggleBoxLock,
     bringToFront,
     sendToBack,
@@ -204,15 +207,17 @@ export function Canvas() {
   }, [])
 
   // Handle box menu selection
-  const handleBoxMenuSelect = useCallback((type: 'text' | 'image') => {
+  const handleBoxMenuSelect = useCallback((type: 'text' | 'image' | 'web') => {
     const canvasPos = screenToCanvas(boxMenuPos.x, boxMenuPos.y)
     if (type === 'text') {
       addTextBox(canvasPos.x - 150, canvasPos.y - 100)
     } else if (type === 'image') {
       addImageBox(canvasPos.x - 200, canvasPos.y - 150)
+    } else if (type === 'web') {
+      addWebClipBox(canvasPos.x - 160, canvasPos.y - 100)
     }
     setShowBoxMenu(false)
-  }, [boxMenuPos, screenToCanvas, addTextBox, addImageBox])
+  }, [boxMenuPos, screenToCanvas, addTextBox, addImageBox, addWebClipBox])
 
   // Close box menu
   const closeBoxMenu = useCallback(() => {
@@ -364,6 +369,25 @@ export function Canvas() {
           onSendToBack={() => sendToBack(box.id)}
           onToggleLock={() => toggleBoxLock(box.id)}
           onImageUrlChange={(imageUrl, altText) => updateImageContent(box.id, imageUrl, altText)}
+        />
+      )
+    }
+
+    if (box.type === 'web') {
+      return (
+        <WebClipBox
+          key={box.id}
+          box={displayBox as WebClipBoxData}
+          isSelected={selectedBoxId === box.id}
+          onSelect={() => selectBox(box.id)}
+          onDragStart={(e) => handleBoxDragStart(e, box)}
+          onResize={(width, height) => resizeBox(box.id, width, height)}
+          onDelete={() => removeBox(box.id)}
+          onDuplicate={() => duplicateBox(box.id)}
+          onBringToFront={() => bringToFront(box.id)}
+          onSendToBack={() => sendToBack(box.id)}
+          onToggleLock={() => toggleBoxLock(box.id)}
+          onUrlChange={(url, metadata) => updateWebClipContent(box.id, url, metadata)}
         />
       )
     }
@@ -532,6 +556,13 @@ export function Canvas() {
             <Image size={14} className="text-green-400" />
             Image
           </button>
+          <button
+            onClick={() => handleBoxMenuSelect('web')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-700 text-sm text-neutral-200"
+          >
+            <Globe size={14} className="text-purple-400" />
+            Web Clip
+          </button>
         </div>
       )}
 
@@ -563,6 +594,7 @@ export function Canvas() {
       <div className="absolute bottom-4 left-4 text-xs text-neutral-600 space-y-0.5">
         <div>T - New text box</div>
         <div>I - New image box</div>
+        <div>W - New web clip</div>
         <div>⌘D - Duplicate</div>
         <div>Del - Delete</div>
         <div>Enter - Edit selected</div>

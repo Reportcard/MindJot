@@ -29,6 +29,17 @@ export interface ImageBoxData extends Box {
   altText: string
 }
 
+// Extended web clip box with URL and metadata
+export interface WebClipBoxData extends Box {
+  type: 'web'
+  url: string
+  title?: string
+  description?: string
+  favicon?: string
+  thumbnail?: string
+  siteName?: string
+}
+
 // Viewport state
 export interface Viewport {
   x: number // Pan offset X
@@ -79,6 +90,10 @@ interface CanvasState {
   // Image box specific
   addImageBox: (x: number, y: number, imageUrl: string, width?: number, height?: number, altText?: string) => string
   updateImageContent: (id: string, imageUrl: string, altText?: string) => void
+  
+  // Web clip box specific
+  addWebClipBox: (x: number, y: number, url?: string, width?: number, height?: number) => string
+  updateWebClipContent: (id: string, url: string, metadata?: { title?: string; description?: string; favicon?: string; thumbnail?: string; siteName?: string }) => void
   
   // Z-order
   bringToFront: (id: string) => void
@@ -343,6 +358,50 @@ export const useCanvasStore = create<CanvasState>()(
       boxes: state.boxes.map((box) =>
         box.id === id && box.type === 'image' 
           ? { ...box, imageUrl, altText: altText !== undefined ? altText : box.altText } 
+          : box
+      )
+    })),
+    
+    // Web clip box specific methods
+    addWebClipBox: (x, y, url = '', width = 320, height = 200) => {
+      const state = get()
+      const snappedX = state.grid.snapToGrid ? state.snapToGrid(x) : x
+      const snappedY = state.grid.snapToGrid ? state.snapToGrid(y) : y
+      const maxZIndex = state.boxes.reduce((max, b) => Math.max(max, b.zIndex), 0)
+      
+      const id = generateId()
+      const newBox: WebClipBoxData = {
+        id,
+        type: 'web',
+        x: snappedX,
+        y: snappedY,
+        width,
+        height,
+        url,
+        zIndex: maxZIndex + 1,
+        locked: false,
+      }
+      
+      set((state) => ({
+        boxes: [...state.boxes, newBox],
+        selectedBoxId: id,
+      }))
+      
+      return id
+    },
+    
+    updateWebClipContent: (id, url, metadata) => set((state) => ({
+      boxes: state.boxes.map((box) =>
+        box.id === id && box.type === 'web' 
+          ? { 
+              ...box, 
+              url,
+              title: metadata?.title ?? (box as WebClipBoxData).title,
+              description: metadata?.description ?? (box as WebClipBoxData).description,
+              favicon: metadata?.favicon ?? (box as WebClipBoxData).favicon,
+              thumbnail: metadata?.thumbnail ?? (box as WebClipBoxData).thumbnail,
+              siteName: metadata?.siteName ?? (box as WebClipBoxData).siteName,
+            } 
           : box
       )
     })),
